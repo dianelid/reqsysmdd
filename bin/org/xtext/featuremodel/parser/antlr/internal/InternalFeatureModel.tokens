@@ -1,0 +1,75 @@
+RULE_ID=5
+T__29=29
+T__28=28
+T__27=27
+T__26=26
+T__25=25
+T__24=24
+T__23=23
+T__22=22
+RULE_ANY_OTHER=10
+T__21=21
+T__20=20
+T__19=19
+T__16=16
+T__15=15
+T__18=18
+T__17=17
+T__12=12
+T__11=11
+T__14=14
+T__13=13
+RULE_INT=6
+T__42=42
+T__43=43
+T__40=40
+T__41=41
+T__44=44
+RULE_SL_COMMENT=8
+RULE_ML_COMMENT=7
+T__30=30
+T__31=31
+T__32=32
+RULE_STRING=4
+T__33=33
+T__34=34
+T__35=35
+T__36=36
+T__37=37
+T__38=38
+T__39=39
+RULE_WS=9
+'</fm:FeatureGroup>'=42
+'1'=27
+'<fm:Cardinality fm:cardMax='=24
+'</fm:SolitaryReference>'=39
+'<fm:Annotation fm:value="Annotation">'=20
+'<fm:GroupedFeatures fm:value='=34
+'<fm:CardinalityInclusiveOr fm:cardMax="n" fm:cardMin="1"/>'=31
+'>'=18
+'fm:cardMin='=26
+'<fm:SolitaryReference fm:value='=38
+'</fm:SolitaryFeature>'=37
+'</fm:FeatureModel>'=16
+'<fm:FeatureGroup fm:value="FeatureGroup">'=33
+'</fm:GroupedFeature>'=41
+'<?xml version="1.0" encoding="UTF-8"?>'=11
+'</fm:GroupedReference>'=44
+'<fm:Description fm:value='=21
+'<fm:CardinalityAlternative fm:cardMax="1" fm:cardMin="1"/>'=30
+'0'=29
+'<fm:CardinalityInclusiveOr fm:cardMax="*" fm:cardMin="1"/>'=32
+'xmlns:fm="http://www.pnp-software.com/XFeature/fmm"'=13
+'<fm:FeatureModel fm:value="FeatureModel"'=12
+'"1"'=25
+'/>'=22
+'</fm:RootFeature>'=19
+'"0"'=28
+'<fm:RootFeature fm:value='=17
+'xsi:schemaLocation="http://www.pnp-software.com/XFeature/fmm ./FeatureModel.xfmm">'=15
+'<fm:SolitaryFeature fm:value='=36
+'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"'=14
+','=35
+'<fm:GroupedFeature fm:value='=40
+'<fm:GroupedReference fm:value='=43
+'</fm:Annotation>'=23

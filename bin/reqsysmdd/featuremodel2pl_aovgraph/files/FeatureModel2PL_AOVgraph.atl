@@ -1,0 +1,336 @@
+module FeatureModel2PL_AOVgraph;
+create OUT : PL_AOVgraph from IN : FeatureModel;
+
+uses LibFeatureModel2PLAOVgraph;
+
+helper def: id_Pointcut : Integer = 1;
+helper def: root : FeatureModel!RootFeature = FeatureModel!RootFeature;
+helper def: advices : OrderedSet(FeatureModel!Feature) = OrderedSet(FeatureModel!Feature);
+helper def: intertypesElement : OrderedSet(FeatureModel!Feature) = OrderedSet(FeatureModel!Feature);
+helper def: intertypesAttribute : OrderedSet(FeatureModel!Feature) = OrderedSet(FeatureModel!Feature);
+helper def: operand : PL_AOVgraph!Operand = OclUndefined;
+helper def: adviceIntertypeAtual : String = '';
+helper def : pointcutAtual : PL_AOVgraph!Pointcut = OclUndefined;
+
+
+rule FeatureModel2Aspect_Oriented_Model {
+	from
+		model: FeatureModel!FeatureModel
+	to
+		out: PL_AOVgraph!Aspect_Oriented_Model(goalmodel <- model.containsRoot)
+}
+
+rule RootFeature2GoalModel { --regra 1 (root)
+	from
+		model: FeatureModel!RootFeature (
+			not model.oclIsTypeOf(FeatureModel!Feature) and
+			not model.oclIsTypeOf(FeatureModel!ReferenceFeature) and
+			not model.oclIsTypeOf(FeatureModel!GroupedReference) and
+			not model.oclIsTypeOf(FeatureModel!GroupedFeature))
+	to
+		out: PL_AOVgraph!Goal_Model(
+			name <- model.name,
+			element <- model.containsFeature, --regra 2 (hierarquia)
+			relationship <- model.getCorrelation(Sequence{}), --regra 7 (correlação)
+			property <- model.getAllChildrenRelationProperty()
+			)
+	do{
+		thisModule.root <- model;
+		out.relationship <- model.getSources() -> collect(source | thisModule.Feature2Crosscutting(source)); --regra 8 (crosscutting)
+	}
+}
+
+lazy rule Feature2Crosscutting { --regra 8 (crosscutting)
+	from
+		model: FeatureModel!Feature
+	to
+		cross: PL_AOVgraph!Crosscutting(
+			source <- model
+			--pointcut <- model.getPointcuts() -> collect(pointcut | thisModule.FathersReferences2Pointcuts(pointcut))
+			)
+	do{
+		thisModule.advices <- model.filterAdvices(model.returnRoot().returnAdvicesIntertypes().union(model.returnRoot().returnAdvicesIntertypesSubstitute(OrderedSet{})));
+		cross.pointcut <- model.getPointcuts() -> collect(pointcut | thisModule.FathersReferences2Pointcuts(pointcut));
+		cross.advice <- cross.pointcut -> collect(pointcut |
+			if thisModule.pointcutAtual<>pointcut then
+				if thisModule.advices.size()>0 then
+					thisModule.References2Advice(pointcut)
+				else
+					OclUndefined
+				endif
+			else
+				OclUndefined
+			endif
+		);
+		thisModule.intertypesElement <- model.filterIntertypesElement(model.returnRoot().returnAdvicesIntertypes().union(model.returnRoot().returnAdvicesIntertypesSubstitute(OrderedSet{})));
+		cross.intertype <- cross.pointcut -> collect(pointcut | 
+			if thisModule.pointcutAtual<>pointcut then
+				if thisModule.intertypesElement.size()>0 then
+					thisModule.References2IntertypeElement(pointcut)
+				else
+					OclUndefined
+				endif
+			else
+				OclUndefined
+			endif
+		);
+		
+		thisModule.intertypesAttribute <- model.filterIntertypesAttribute(model.returnRoot().returnAdvicesIntertypes().union(model.returnRoot().returnAdvicesIntertypesSubstitute(OrderedSet{})));
+		cross.intertype <- cross.pointcut -> collect(pointcut | 
+			if thisModule.pointcutAtual<>pointcut then
+				if thisModule.intertypesAttribute.size()>0 then
+					thisModule.References2IntertypeAttribute(pointcut)
+				else
+					OclUndefined
+				endif
+			else
+				OclUndefined
+			endif
+		);
+		
+--		for (pointcut in cross.pointcut) {
+--			if thisModule.advices.size()>0 then
+--				thisModule.References2Advice(pointcut)
+--			else
+--				if thisModule.intertypesElement.size()>0 then
+--					thisModule.References2IntertypeElement(pointcut)
+--				else
+--					if thisModule.intertypesAttribute.size()>0 then
+--						thisModule.References2IntertypeAttribute(pointcut)
+--					else
+--						OclUndefined
+--					endif
+--				endif
+--			endif;
+--		}
+	}
+}
+
+lazy rule FathersReferences2Pointcuts { --regra 8 (crosscutting)
+	from
+		model: OrderedSet(FeatureModel!Feature)
+	to
+		out: PL_AOVgraph!Pointcut(
+			name <- 'PC'+thisModule.id_Pointcut
+			)
+	do{
+		thisModule.adviceIntertypeAtual <- out.returnAdviceIntertypeAtual(model, out.returnNamesReferencesAnnotations(model));
+		out.operand <- model -> collect(operand | thisModule.FatherReference2Operand(operand));
+		thisModule.id_Pointcut <- thisModule.id_Pointcut+1;
+		thisModule.operand <- OclUndefined;
+	}
+}
+
+lazy rule FatherReference2Operand { --regra 8 (crosscutting)
+	from
+		model: FeatureModel!Feature
+	to
+		out: PL_AOVgraph!Operand (primitive <- model.returnPrimitive(thisModule.adviceIntertypeAtual), joinpointPointcut <- model,
+			operator <- (if thisModule.operand<>OclUndefined then thisModule.Operator(model) else OclUndefined endif)
+		)
+	do {
+		thisModule.operand <- out;
+	}
+}
+
+lazy rule Operator {
+	from
+		model: FeatureModel!Feature
+	to
+		out: PL_AOVgraph!Operator (operator <-  thisModule.root.returnOperator(thisModule.advices))
+}
+
+lazy rule References2Advice {
+	from
+		model: PL_AOVgraph!Pointcut
+	to
+		out: PL_AOVgraph!Advice (type <- model.returnAdviceCategory(thisModule.root.returnJoinpoints(thisModule.advices)), 
+			idPointcut <- model, joinpointAdvice <- thisModule.root.getAdvice(thisModule.advices))
+	do{
+		for (advice in thisModule.root.getAdvice(thisModule.advices)) {
+			thisModule.advices <- thisModule.advices.excluding(advice);
+		}
+		thisModule.pointcutAtual<-model;
+	}
+}
+
+lazy rule References2IntertypeElement {
+	from
+		model: PL_AOVgraph!Pointcut
+	to
+		out: PL_AOVgraph!IntertypeDeclaration (type <- #element, idPointcut <- model)
+	do{
+		out.newElement <- thisModule.root.getIntertype(thisModule.intertypesElement)->collect(e | thisModule.IntertypeElement2Element(e));
+		for (intertype in thisModule.root.getIntertype(thisModule.intertypesElement)) {
+			thisModule.intertypesElement <- thisModule.intertypesElement.excluding(intertype);
+		}
+		thisModule.pointcutAtual<-model;
+	}
+}
+
+lazy rule IntertypeElement2Element {
+	from
+		model: FeatureModel!Feature
+	to
+		out: PL_AOVgraph!Element(
+			name<-model.name,
+			type <- model.hasAnnotationTypeElement(), --regra 9 (tipo do elemento)
+			element <- model.containsFeature, --regra 2 (hierarquia)
+			relationship <- model.containsRelation -> select(relation | not relation.oclIsTypeOf(FeatureModel!GroupCardinality))
+		)
+	do{
+		out.property <- model.getAllChildrenRelationProperty() -> collect(property | 
+			if property.oclIsTypeOf(FeatureModel!Mandatory) then 
+				thisModule.MandatoryCardinality2Cardinality(property) 
+			else 
+				if property.oclIsTypeOf(FeatureModel!Optional) then 
+					thisModule.OptionalCardinality2Cardinality(property)
+				else
+					if property.oclIsTypeOf(FeatureModel!GroupCardinality) then
+						thisModule.GroupCardinalityGroupFeature(property)
+					else
+						property 
+					endif
+				endif
+			endif);
+	}
+}
+
+lazy rule References2IntertypeAttribute {
+	from
+		model: PL_AOVgraph!Pointcut
+	to
+		out: PL_AOVgraph!IntertypeDeclaration (type <- #attribute, idPointcut <- model)
+	do{
+		out.newAttribute <- thisModule.root.getIntertype(thisModule.intertypesAttribute)->collect(a | thisModule.IntertypeAttribute2Attribute(a)); 
+		for (intertype in thisModule.root.getIntertype(thisModule.intertypesAttribute)) {
+			thisModule.intertypesAttribute <- thisModule.intertypesAttribute.excluding(intertype);
+		}
+		thisModule.pointcutAtual<-model;
+	}
+}
+
+lazy rule IntertypeAttribute2Attribute {
+	from
+		model: FeatureModel!Feature
+	to
+		out: PL_AOVgraph!Attribute(
+			type <- model.getAttribute(),
+			value <- model.name
+		)
+}
+
+rule FeatureAndGroupedFeature2Element {
+	from
+		model: FeatureModel!Feature (not model.oclIsTypeOf(FeatureModel!ReferenceFeature) and not model.oclIsTypeOf(FeatureModel!GroupedReference) and model.isIntertypeElement()=false and model.isIntertypeAttribute()=false)
+	to
+		out: PL_AOVgraph!Element(
+			name <- model.name,
+			type <- model.hasAnnotationTypeElement(), --regra 9 (tipo do elemento)
+			element <- model.containsFeature, --regra 2 (hierarquia)
+			relationship <- model.containsRelation -> select(relation | not relation.oclIsTypeOf(FeatureModel!GroupCardinality))
+			)
+	do{
+		out.property <- model.getAllChildrenRelationProperty() -> collect(property | 
+			if property.oclIsTypeOf(FeatureModel!Mandatory) then 
+				thisModule.MandatoryCardinality2Cardinality(property) 
+			else 
+				if property.oclIsTypeOf(FeatureModel!Optional) then 
+					thisModule.OptionalCardinality2Cardinality(property)
+				else
+					if property.oclIsTypeOf(FeatureModel!GroupCardinality) then
+						thisModule.GroupCardinalityGroupFeature(property)
+					else
+						property 
+					endif
+				endif
+			endif);
+	}
+}
+
+lazy rule MandatoryCardinality2Cardinality { --regra 4 (feature com cardinalidade)
+	from
+		model: FeatureModel!Mandatory ((model.cardinalityMin='1') and (model.refImmediateComposite().oclIsTypeOf(FeatureModel!RootFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!Feature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedFeature)) or ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!ReferenceFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedReference)) and model.refImmediateComposite().isAdvice()=false))
+	to
+		out: PL_AOVgraph!Cardinality(cardinalityMin <- model.cardinalityMin, cardinalityMax <- model.cardinalityMax, source <- model.refImmediateComposite(), target <- model.refImmediateComposite().refImmediateComposite())
+}
+
+lazy rule OptionalCardinality2Cardinality { --regra 4 (feature com cardinalidade)
+	from
+		model: FeatureModel!Optional ((model.cardinalityMin='0') and (model.refImmediateComposite().oclIsTypeOf(FeatureModel!RootFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!Feature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedFeature)) or ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!ReferenceFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedReference)) and model.refImmediateComposite().isAdvice()=false))
+	to
+		out: PL_AOVgraph!Cardinality(cardinalityMin <- model.cardinalityMin, cardinalityMax <- model.cardinalityMax, source <- model.refImmediateComposite(), target <- model.refImmediateComposite().refImmediateComposite())
+}
+
+lazy rule GroupCardinalityGroupFeature { --regra 5 (grupos)
+	from
+		model: FeatureModel!GroupCardinality
+	to
+		out: PL_AOVgraph!GroupFeature (cardinalityGroupMin <- model.cardinalityMin, cardinalityGroupMax <- model.cardinalityMax, source <- model.target, target <- model.refImmediateComposite())
+}
+
+rule ReferenceFeatureAndGroupedReference2ElementReference { --regra 6 (referência)
+	from
+		model: FeatureModel!Feature ((model.oclIsTypeOf(FeatureModel!ReferenceFeature) or model.oclIsTypeOf(FeatureModel!GroupedReference)) and model.isAdvice()=false and model.returnRoot().returnReferencedElement(model, model).isIntertypeElement()=false and model.returnRoot().returnReferencedElement(model, model).isIntertypeAttribute()=false)
+	to
+		out: PL_AOVgraph!Element(
+			name <- model.name,
+			type <- model.hasAnnotationTypeElementReference(), --regra 9 (tipo do elemento)
+			element <- model.containsFeature, --regra 2 (hierarquia)
+			relationship <- model.containsRelation -> select(relation | not relation.oclIsTypeOf(FeatureModel!GroupCardinality))
+			)
+	do{
+		out.property <- model.getAllChildrenRelationProperty() -> collect(property | 
+			if property.oclIsTypeOf(FeatureModel!Mandatory) then 
+				thisModule.MandatoryCardinality2Cardinality(property) 
+			else 
+				if property.oclIsTypeOf(FeatureModel!Optional) then 
+					thisModule.OptionalCardinality2Cardinality(property)
+				else
+					if property.oclIsTypeOf(FeatureModel!GroupCardinality) then
+						thisModule.GroupCardinalityGroupFeature(property)
+					else
+						property 
+					endif
+				endif
+			endif);
+	}
+}
+
+rule Annotation2Correlation { --regra 7 (correlação)
+	from
+		model: FeatureModel!Annotation (model.isCorrelation()=true)
+	to
+		out: PL_AOVgraph!Correlation(source <- model.refImmediateComposite(),
+			label <- model.description.substring(1, model.description.indexOf(':')), 
+			target <- model.refImmediateComposite().returnRoot().refElement(model.description.substring(model.description.indexOf(':')+3, model.description.size()), FeatureModel!Feature)
+			)
+}
+
+rule Mandatory2ContributionAnd { --regra 3 (contribuição)
+	from
+		model: FeatureModel!Mandatory ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!RootFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!Feature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedFeature)) or ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!ReferenceFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedReference)) and model.refImmediateComposite().isAdvice()=false))
+	to
+		out: PL_AOVgraph!Contribution(label <- 'and', source <- model.refImmediateComposite(), target <- model.refImmediateComposite().refImmediateComposite())
+}
+
+rule Optional2ContributionOr { --regra 3 (contribuição)
+	from
+		model: FeatureModel!Optional ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!RootFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!Feature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedFeature)) or ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!ReferenceFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedReference)) and model.refImmediateComposite().isAdvice()=false))
+	to
+		out: PL_AOVgraph!Contribution(label <- 'or', source <- model.refImmediateComposite(), target <- model.refImmediateComposite().refImmediateComposite())
+}
+
+rule Alternative2ContributionXor { --regra 3 (contribuição)
+	from
+		model: FeatureModel!Alternative ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!RootFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!Feature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedFeature)) or ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!ReferenceFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedReference)) and model.refImmediateComposite().isAdvice()=false))
+	to
+		out: PL_AOVgraph!Contribution(label <- 'xor', source <- model.refImmediateComposite(), target <- model.refImmediateComposite().refImmediateComposite())
+}
+
+rule Inclusive_Or2ContributionInc_Or { --regra 3 (contribuição)
+	from
+		model: FeatureModel!Inclusive_Or ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!RootFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!Feature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedFeature)) or ((model.refImmediateComposite().oclIsTypeOf(FeatureModel!ReferenceFeature) or model.refImmediateComposite().oclIsTypeOf(FeatureModel!GroupedReference)) and model.refImmediateComposite().isAdvice()=false))
+	to
+		out: PL_AOVgraph!Contribution(label <- 'inc_or', source <- model.refImmediateComposite(), target <- model.refImmediateComposite().refImmediateComposite())
+}

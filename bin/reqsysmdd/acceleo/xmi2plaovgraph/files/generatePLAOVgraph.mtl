@@ -1,0 +1,89 @@
+[comment encoding = Cp1252 /]
+[module generatePLAOVgraph('http://plaovgraph/1.0')/]
+
+[template public generate(aAspect_Oriented_Model : Aspect_Oriented_Model)]
+[comment @main /]
+[file ('/PLAOVgraph.plaovgraph', false)]
+aspect_oriented_model {
+[for (g : Goal_Model | goalmodel) separator ('\n')]
+goal_model "[g.name/]" {
+[for (e : Element| g.element)][e.getElements()/]
+[/for][g.getCorrelations()/][g.getCrosscuttings()/]}
+[/for]
+};[/file]
+[/template]
+
+[template public getElements(e : Element)]
+	[e.type/] "[e.name/]" ([returnContribution(e.relationship.eGet('label').toString())/]) {[if (e.element->isEmpty() and e.property->isEmpty())]}[else]
+	[e.getProperties()/]
+	[for (element : Element | e.element)]
+	[element.getElements()/]
+	[/for]	}[/if]
+[/template]
+
+[query public returnContribution(str : Sequence(String)) : String = 
+	self->collect(relation |
+		if relation = 'inc_or' then
+			'inc-or'
+		else
+			relation
+		endif
+	)
+/]
+
+[template public getProperties(eElement : Element)]
+	[if (eElement.property->notEmpty())]
+		
+	property {
+	[for (p : Property | eElement.property)]
+		[if (p.oclIsTypeOf(IsFeature))]
+		isFeature=[p.eGet('label')/];
+		[/if]
+		[if (p.oclIsTypeOf(GroupFeature))]
+		groupFeature=([for (e : Element | p.eGet('source'))][if (p.eGet('source')->first().name=e.name)][e.type/] "[e.name/]"[else], [e.type/] "[e.name/]"[/if][/for]);
+		cardinalityGroupMin=[p.eGet('cardinalityGroupMin')/];
+		cardinalityGroupMax=[p.eGet('cardinalityGroupMax')/];
+		[/if]
+		[if (p.oclIsTypeOf(Cardinality))]
+		cardinalityMin=[p.eGet('cardinalityMin')/];
+		cardinalityMax=[p.eGet('cardinalityMax')/];
+		[/if]
+	[/for]	}[/if]
+[/template]
+
+[template public getCorrelations(eGoal_Model : Goal_Model)]
+[for (c : Correlation | eGoal_Model.relationship->select(relation: Relationship | relation.oclIsTypeOf(Correlation)))]
+	correlation ([c.label/]){
+		source: [c.source.eGet('type')/]_ref "[c.source.name/]"
+		target: [c.target.eGet('type')/]_ref "[c.target.name/]"
+	}
+[/for]
+[/template]
+
+[template public getCrosscuttings(eGoal_Model : Goal_Model)]
+[for (c : Crosscutting | eGoal_Model.relationship->select(relation: Relationship | relation.oclIsTypeOf(Crosscutting)))]
+	crosscutting {
+		source: [c.source.eGet('type')/]_ref "[c.source.name/]"
+	[for (p : Pointcut | c.pointcut)]
+		pointcut [p.name/]:[for (op : Operand | p.operand)] [if (op.operator->notEmpty())][op.operator.operator/] [/if][op.primitive/] "[op.joinpointPointcut.name/]"[/for]
+	[/for]
+	[for (ad : Advice | c.advice)]
+		advice ([ad.type/]): [for (p : Pointcut | ad.idPointcut)][p.name/][/for] {
+		[for (e : Element | ad.joinpointAdvice)]
+			[e.type/]_ref "[e.name/]" ([returnContribution(e.relationship.eGet('label').toString())/])
+		[/for]
+		}
+	[/for]
+	[for (it : IntertypeDeclaration | c.intertype)]
+		intertype declaration ([it.type/]): [for (p : Pointcut | it.idPointcut)][p.name/][/for] {
+		[for (e : Element | it.newElement)]
+		[getElements(e)/]
+		[/for]
+		[for (a : Attribute | it.newAttribute)]
+			"[a.type/]" = "[a.value/]"
+		[/for]
+		}
+	[/for]
+	}
+[/for]
+[/template]

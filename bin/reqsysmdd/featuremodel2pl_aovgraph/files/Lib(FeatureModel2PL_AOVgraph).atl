@@ -1,0 +1,462 @@
+library LibFeatureModel2PLAOVgraph;
+
+helper context FeatureModel!RootFeature def: getAllChildrenRelationProperty() : Sequence(FeatureModel!Relationship) =
+	self.containsRelation->iterate(child; elements: Sequence(FeatureModel!Relationship) = Sequence{} | 
+	if child.oclIsTypeOf(FeatureModel!GroupCardinality) then
+		elements.append(child)
+	else
+		if child.oclIsTypeOf(FeatureModel!Mandatory) or child.oclIsTypeOf(FeatureModel!Optional) then
+			if child.cardinalityMin='1' or child.cardinalityMin='0' then
+				elements.append(child)
+			else
+				elements
+			endif
+		else
+			elements
+		endif
+	endif
+	);
+
+helper context FeatureModel!Feature def: hasAnnotationTypeElement() : PL_AOVgraph!ElementTypes =
+	self.annotation->iterate(annotation; typeElement: PL_AOVgraph!ElementTypes = #task |
+	if annotation.description.endsWith('softgoal') or annotation.description.endsWith('softgoal)') then
+		#softgoal
+	else
+		if annotation.description.endsWith('goal') or annotation.description.endsWith('goal)') then
+			#goal
+		else
+			typeElement
+		endif
+	endif
+	);
+
+helper context FeatureModel!Feature def: hasAnnotationTypeElementReference() : PL_AOVgraph!ElementTypes =
+	self.annotation->iterate(annotation; typeElement: PL_AOVgraph!ElementTypes = #task_ref |
+	if annotation.description='goal_ref' or annotation.description='softgoal_ref' then
+		annotation.description
+	else
+		typeElement
+	endif
+	);
+
+helper context FeatureModel!Annotation def: isCorrelation() : Boolean =
+	if self.description.toString().indexOf(':')<>-1 then
+		if self.description.toString().substring(1, self.description.toString().indexOf(':'))='make' or 
+			self.description.toString().substring(1, self.description.toString().indexOf(':'))='break' or
+			self.description.toString().substring(1, self.description.toString().indexOf(':'))='help' or
+			self.description.toString().substring(1, self.description.toString().indexOf(':'))='hurt' or
+			self.description.toString().substring(1, self.description.toString().indexOf(':'))='unknown' then
+			true
+		else
+			false
+		endif
+	else
+		false
+	endif
+	;
+
+helper context FeatureModel!RootFeature def: getCorrelation(annotationsRecursive: Sequence(FeatureModel!Annotation)) : Sequence(FeatureModel!Annotation) =
+	self.containsFeature->iterate(element; annot: Sequence(FeatureModel!Annotation) = annotationsRecursive | 
+		if element.annotation.size()>0 then
+			element.annotation->iterate(annotation; annotations: Sequence(FeatureModel!Annotation) = annot |
+				if annotation.isCorrelation()=true then
+					annotations.append(annotation)
+				else
+					element.getCorrelation(annotations)
+				endif
+			)
+		else
+			element.getCorrelation(annot)
+		endif
+	);
+
+helper context PL_AOVgraph!Goal_Model def: refElementPL_AOVgraph(name: String, elementRecursive: PL_AOVgraph!Element) : PL_AOVgraph!Element =
+	self.element->iterate(element; elementReturned: PL_AOVgraph!Element = elementRecursive |
+		if element.type=#task or element.type=#goal or element.type=#softgoal then
+			if element.name=name then
+				element
+			else
+				element.refElementPL_AOVgraph(name, elementReturned)
+			endif
+		else
+			element.refElementPL_AOVgraph(name, elementReturned)
+		endif
+	);
+
+helper context FeatureModel!RootFeature def: refElement(name: String, featureRecursive: FeatureModel!Feature) : FeatureModel!Feature =
+	self.containsFeature->iterate(feature; featureReturned: FeatureModel!Feature = featureRecursive |
+		if not feature.oclIsTypeOf(FeatureModel!ReferenceFeature) and not feature.oclIsTypeOf(FeatureModel!GroupedReference) then
+			if feature.name=name then
+				feature
+			else
+				feature.refElement(name, featureReturned)
+			endif
+		else
+			feature.refElement(name, featureReturned)
+		endif
+	);
+
+helper context FeatureModel!Feature def: returnRoot() : FeatureModel!RootFeature =
+	if self.refImmediateComposite().oclIsTypeOf(FeatureModel!RootFeature) then
+		self.refImmediateComposite()
+	else
+		self.refImmediateComposite().returnRoot()
+	endif
+	;
+
+helper context FeatureModel!RootFeature def: getSources() : OrderedSet(FeatureModel!Feature) =
+	self.returnAdvicesIntertypes().union(self.returnAdvicesIntertypesSubstitute(OrderedSet{}))->iterate(advice; sources: OrderedSet(FeatureModel!Feature) = OrderedSet{} |
+	if self.getFather(advice, FeatureModel!Feature)<>FeatureModel!Feature then
+		sources.append(self.getFather(advice, FeatureModel!Feature))
+	else
+		sources
+	endif
+	);
+
+helper context FeatureModel!RootFeature def: getFather(advice: String, fatherRecursive: FeatureModel!Feature) : FeatureModel!Feature =
+	self.containsFeature->iterate(child; father : FeatureModel!Feature =  fatherRecursive|
+	if child.name=advice and not child.oclIsTypeOf(FeatureModel!ReferenceFeature) and not child.oclIsTypeOf(FeatureModel!GroupedReference) then
+		child.refImmediateComposite()
+	else
+		child.getFather(advice, father)
+	endif
+	);
+	
+helper context FeatureModel!RootFeature def: returnAdvicesIntertypes() : OrderedSet(String) =
+	self.getReferences(Sequence{})->iterate(reference; advices: OrderedSet(String) = OrderedSet{} |
+	if reference.numRef(self.getReferences(Sequence{}))>1 or reference.annotation->exists(annot | annot.description.endsWith('before') or annot.description.endsWith('after')) then --se a referência aparece mais de uma vez
+		advices.append(reference.name)
+	else
+		advices
+	endif
+	);
+
+helper context FeatureModel!Feature def: numRef(references: Sequence(FeatureModel!Feature)) : Integer =
+	references->iterate(reference; retorno: Integer = 0 |
+	if reference.name=self.name then
+		retorno+1
+	else
+		retorno
+	endif
+	);
+
+helper context FeatureModel!RootFeature def: getReferences(referencesRecursive: Sequence(FeatureModel!Feature)) : Sequence(FeatureModel!Feature) =
+	self.containsFeature->iterate(child; references: Sequence(FeatureModel!Feature) = referencesRecursive |
+	if child.oclIsTypeOf(FeatureModel!ReferenceFeature) or child.oclIsTypeOf(FeatureModel!GroupedReference) then
+		references.append(child)
+	else
+		child.getReferences(references)
+	endif
+	);
+
+helper context FeatureModel!Feature def: getPointcuts() : OrderedSet(OrderedSet(FeatureModel!Feature)) =
+	self.filterAdvices(self.returnRoot().returnAdvicesIntertypes().union(self.returnRoot().returnAdvicesIntertypesSubstitute(OrderedSet{}))).union(self.filterIntertypes(self.returnRoot().getReferences(Sequence{})->collect(ref | ref.name).union(self.returnRoot().returnAdvicesIntertypesSubstitute(OrderedSet{})))) -> 
+	iterate(advice_intertype; pointcuts: OrderedSet(OrderedSet(FeatureModel!Feature)) = OrderedSet{} |
+	pointcuts.append(self.returnRoot().getFathers(advice_intertype, OrderedSet{})) );
+
+helper context FeatureModel!RootFeature def : returnAdvicesIntertypesSubstitute(recursive:OrderedSet(String)) : OrderedSet(String) = 
+	self.containsFeature->iterate(child; retorno: OrderedSet(String) = recursive |
+		child.annotation->iterate(annot; retorno1: OrderedSet(String) = retorno |
+			if annot.description.startsWith('substitute:') then
+				if annot.description.indexOf(';')>0 then
+					annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(';')).split(', ')->
+					iterate(str; retorno2: OrderedSet(String) = retorno1 |
+						retorno2.append(str.substring(1, str.size()))
+					)
+				--retorno1.append(annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(';')))
+				else
+					annot.description.substring(annot.description.indexOf(':')+3, annot.description.size()).split(', ')->
+					iterate(str; retorno2: OrderedSet(String) = retorno1 |
+						retorno2.append(str.substring(1, str.size()))
+					)
+--					retorno1.append(annot.description.substring(annot.description.indexOf(':')+3, annot.description.size()))
+				endif
+			else
+				child.returnAdvicesIntertypesSubstitute(retorno1)
+			endif
+		)		
+	);
+
+helper context FeatureModel!Feature def: filterIntertypes(allAdvices: OrderedSet(String)): OrderedSet(FeatureModel!Feature) =
+	self.filterIntertypesElement(allAdvices).union(self.filterIntertypesAttribute(allAdvices));
+
+helper context FeatureModel!Feature def: filterAdvices(allAdvices: OrderedSet(String)): OrderedSet(FeatureModel!Feature) =
+	self.containsFeature->select(child | allAdvices->exists(c | c=child.name and child.isIntertypeElement()=false and child.isIntertypeAttribute()=false));
+
+helper context FeatureModel!Feature def: filterIntertypesElement(allAdvices: OrderedSet(String)): OrderedSet(FeatureModel!Feature) =
+	self.containsFeature->select(child | allAdvices->exists(c | c=child.name and child.isIntertypeElement()=true));
+
+helper context FeatureModel!Feature def: filterIntertypesAttribute(allAdvices: OrderedSet(String)): OrderedSet(FeatureModel!Feature) =
+	self.containsFeature->select(child | allAdvices->exists(c | c=child.name and child.isIntertypeAttribute()=true));
+
+helper context FeatureModel!Feature def : isIntertypeElement() : Boolean =
+	self.annotation->iterate(annot; retorno: Boolean = false |
+		if annot.description.startsWith('Intertype Declaration (element:') then
+			true
+		else
+			retorno
+		endif
+	);
+
+helper context FeatureModel!Feature def : isIntertypeAttribute() : Boolean =
+	self.annotation->iterate(annot; retorno: Boolean = false |
+		if annot.description.startsWith('Intertype Declaration (attribute:') then
+			true
+		else
+			retorno
+		endif
+	);
+
+helper context FeatureModel!RootFeature def: getFathers(advice_intertype: FeatureModel!Feature, fatherRecursive: OrderedSet(FeatureModel!Feature)) : OrderedSet(FeatureModel!Feature) =
+	self.containsFeature->iterate(child; fathers : OrderedSet(FeatureModel!Feature) =  fatherRecursive|
+	if child.name=advice_intertype.name and not child.oclIsTypeOf(FeatureModel!Feature) and not child.oclIsTypeOf(FeatureModel!GroupedFeature) then
+		if child.annotation->exists(annot | annot.description.endsWith('before') or annot.description.endsWith('after')) then
+			child.refImmediateComposite().containsFeature->
+			iterate(sister; retorno: OrderedSet(FeatureModel!Feature) = fathers | 
+				if sister.isAdviceBefore_After()=false then
+					retorno.append(sister) --advice before ou after
+				else
+					retorno
+				endif
+			)
+		else	
+			fathers.append(child.refImmediateComposite())
+		endif
+	else
+		child.annotation->iterate(annot; fathers1: OrderedSet(FeatureModel!Feature) = fathers |
+			if annot.description.startsWith('substitute:') then
+				if annot.description.indexOf(';')>0 then --advice before ou after
+					annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(';')).split(', ')->
+					iterate(str; retorno: OrderedSet(FeatureModel!Feature) = fathers1 |
+						if str=advice_intertype.name then
+							fathers.union(child.containsFeature)
+						else
+							child.getFathers(advice_intertype, retorno)
+						endif
+					)
+				else
+					annot.description.substring(annot.description.indexOf(':')+3, annot.description.size()).split(', ')->
+					iterate(str; retorno: OrderedSet(FeatureModel!Feature) = fathers1 |
+						if str=advice_intertype.name then
+							fathers.append(child)
+						else
+							child.getFathers(advice_intertype, retorno)
+						endif
+					)
+				endif
+			else
+				child.getFathers(advice_intertype, fathers1)
+			endif
+		)
+	endif
+	);
+
+helper context FeatureModel!RootFeature def: getAdvice(advices: OrderedSet(FeatureModel!Feature)) : OrderedSet(FeatureModel!Feature) =
+	advices -> iterate(advice; advicesAdd : OrderedSet(FeatureModel!Feature) =  OrderedSet{} |
+	if advices.indexOf(advice)>1 then
+		if self.getFathers(advice, OrderedSet{})=self.getFathers(advices.first(), OrderedSet{}) then
+			advicesAdd.append(advice)
+		else
+			advicesAdd
+		endif
+	else
+		advicesAdd.append(advice)
+	endif
+	); 
+
+helper context FeatureModel!RootFeature def: getIntertype(intertypesElement: OrderedSet(FeatureModel!Feature)) : OrderedSet(FeatureModel!Feature) =
+	intertypesElement -> iterate(intertype; intertypesAdd : OrderedSet(FeatureModel!Feature) =  OrderedSet{} |
+	if intertypesElement.indexOf(intertype)>1 then
+		if self.getFathers(intertype, OrderedSet{})=self.getFathers(intertypesElement.first(), OrderedSet{}) then
+			intertypesAdd.append(intertype)
+		else
+			intertypesAdd
+		endif
+	else
+		intertypesAdd.append(intertype)
+	endif
+	); 
+
+helper context FeatureModel!Feature def: isAdvice() : Boolean =
+	self.returnRoot().returnAdvicesIntertypes()->iterate(advice; retorno: Boolean = false |
+		if self.name=advice then
+			true
+		else
+			retorno
+		endif
+	);
+
+helper context FeatureModel!RootFeature def : returnReferencedElement(reference: FeatureModel!Feature, recursive:FeatureModel!Feature) : FeatureModel!Feature =
+	if reference.oclIsTypeOf(FeatureModel!ReferenceFeature) or reference.oclIsTypeOf(FeatureModel!GroupedReference) then
+		self.containsFeature->iterate(child; retorno: FeatureModel!Feature = recursive |
+			if not child.oclIsTypeOf(FeatureModel!ReferenceFeature) and not child.oclIsTypeOf(FeatureModel!GroupedReference) then
+				if reference.name=child.name then
+					child
+				else
+					child.returnReferencedElement(reference, retorno)
+				endif
+			else
+				retorno
+			endif
+		)
+	else
+		recursive
+	endif;
+
+helper context FeatureModel!Feature def : getAttribute() : String = 
+	self.annotation->iterate(annot; attribute: String = '' |
+		if annot.description.startsWith('Intertype Declaration (attribute:') then
+			annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(')'))
+		else
+			attribute
+		endif
+	);
+
+helper context FeatureModel!Feature def : returnPrimitive(advice:String) : PL_AOVgraph!PrimitiveTypes = 
+	self.annotation->iterate(annot; primitive: PL_AOVgraph!PrimitiveTypes = #include |
+		if annot.description.startsWith('substitute:') then
+			if annot.description.indexOf(';')>0 then
+				if annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(';')).indexOf(advice)>-1 or
+					advice.indexOf(annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(';')))>-1 then
+					#substitute
+				else
+					primitive
+				endif
+			else
+				if annot.description.substring(annot.description.indexOf(':')+3, annot.description.size()).indexOf(advice)>-1 or
+					advice.indexOf(annot.description.substring(annot.description.indexOf(':')+3, annot.description.size()))>-1 then
+					#substitute
+				else
+					primitive
+				endif
+			endif
+		else
+			if self.refImmediateComposite().isAdviceBefore_After()=true then
+				self.refImmediateComposite().returnPrimitive(advice)
+			else
+				primitive
+			endif
+		endif
+	);
+
+helper context PL_AOVgraph!Pointcut def : returnAdviceIntertypeAtual(operandsPointcut: OrderedSet(FeatureModel!Feature), namesReferencesAnnotations: Sequence(String)) : String = 
+	namesReferencesAnnotations->iterate(advice; retorno: String = '' |
+		advice.split(', ')->iterate(ad; advice_intertype: String = retorno |	
+			if ad.numRefAnnot(namesReferencesAnnotations)=operandsPointcut.size() then
+				if advice_intertype='' then
+					ad
+				else
+					if advice_intertype.indexOf(ad)>-1 then
+						advice_intertype
+					else
+						advice_intertype+', '+ad
+					endif
+				endif
+			else
+				advice_intertype
+			endif
+		)
+	);
+
+helper context String def: numRefAnnot(namesReferencesAnnotations: Sequence(String)) : Integer =
+	namesReferencesAnnotations->iterate(name; ret: Integer = 0 |
+		name.split(', ')->iterate(nameRefAnnot; retorno: Integer = ret |
+			if nameRefAnnot=self then
+				retorno+1
+			else
+				retorno
+			endif
+		)
+	);
+
+helper context PL_AOVgraph!Pointcut def : returnNamesReferencesAnnotations(operandsPointcut: OrderedSet(FeatureModel!Feature)) : Sequence(String) = 
+	operandsPointcut->iterate(operand; childs: Sequence(FeatureModel!Feature) = Sequence{} | 
+		childs.union(operand.containsFeature))->select(child | 
+			child.oclIsTypeOf(FeatureModel!ReferenceFeature) or child.oclIsTypeOf(FeatureModel!GroupedReference))->collect(ref | 
+				ref.name).union(
+	operandsPointcut->iterate(operand; childs: Sequence(FeatureModel!Feature) = Sequence{} | 
+		childs.union(operand.refImmediateComposite().containsFeature))->select(child | 
+			child.oclIsTypeOf(FeatureModel!ReferenceFeature) or child.oclIsTypeOf(FeatureModel!GroupedReference))->
+				collect(ref | 
+					if ref.isAdviceBefore_After()=true then --advice after ou before
+						ref.name
+					else
+						''
+					endif
+				)	
+	).union(operandsPointcut->iterate(operand; annotations: Sequence(FeatureModel!Annotation) = Sequence{} | 
+			if operand.refImmediateComposite().isAdviceBefore_After()=true then --advice after ou before
+				annotations.union(operand.refImmediateComposite().annotation)
+			else
+				annotations.union(operand.annotation)
+			endif
+		)->select(annot | annot.description.startsWith('substitute:'))->collect(annot | 
+			if annot.description.indexOf(';')>0 then
+				annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(';'))
+			else
+				annot.description.substring(annot.description.indexOf(':')+3, annot.description.size())
+			endif
+		)
+	);
+
+helper context FeatureModel!RootFeature def : isAdviceBefore_After() : Boolean = 
+	if self.annotation->exists(annot | annot.description.endsWith('before') or annot.description.endsWith('after')) then
+		true
+	else
+		false
+	endif;
+
+helper context PL_AOVgraph!Pointcut def : returnAdviceCategory(joinpoints: Sequence(FeatureModel!Feature)) : PL_AOVgraph!AdviceCategory = 
+	joinpoints->iterate(jp; adCategory: PL_AOVgraph!AdviceCategory = #around |
+		jp.annotation->iterate(annot; adviceCategory: PL_AOVgraph!AdviceCategory = adCategory |
+			if annot.description.endsWith('before') then
+				#before
+			else
+				if annot.description.endsWith('after') then
+					#after
+				else
+					adviceCategory
+				endif
+			endif
+		)
+	);
+
+helper context FeatureModel!RootFeature def : returnJoinpoints(advices:OrderedSet(FeatureModel!Feature)) : Sequence(FeatureModel!Feature) = 
+	self.getReferences(Sequence{})->select(ref | self.getAdvice(advices)->
+		collect(e | e.name)->exists(name | name=ref.name)).union(
+				self.getAdvice(advices)->
+				iterate(jp; jpBeforeAfter: Sequence(FeatureModel!Feature) = Sequence{} |
+					if self.returnJoinpointSubstitute(jp, OclUndefined)<>OclUndefined then
+						jpBeforeAfter.append(self.returnJoinpointSubstitute(jp, OclUndefined))
+					else
+						jpBeforeAfter
+					endif
+				)
+			)
+	;
+
+helper context FeatureModel!RootFeature def : returnJoinpointSubstitute(joinpoint: FeatureModel!Feature, recursive:FeatureModel!Feature) : FeatureModel!Feature = 
+	self.containsFeature->iterate(child; retorno: FeatureModel!Feature = recursive |
+		child.annotation->iterate(annot; jp: FeatureModel!Feature = retorno |
+			if (annot.description.endsWith('before') or annot.description.endsWith('before')) and annot.description.startsWith('substitute:') then
+				annot.description.substring(annot.description.indexOf(':')+3, annot.description.indexOf(';')).split(', ')->iterate(str; jP: FeatureModel!Feature = jp |
+					if str=joinpoint.name then
+						child
+					else
+						child.returnJoinpointSubstitute(joinpoint, jP)
+					endif
+				)
+			else
+				child.returnJoinpointSubstitute(joinpoint, jp)
+			endif
+		)
+	);
+
+helper context FeatureModel!RootFeature def : returnOperator(advices: OrderedSet(FeatureModel!Feature)) : PL_AOVgraph!OperatorTypes = 
+	self.returnJoinpoints(advices)->iterate(jp; operator: PL_AOVgraph!OperatorTypes = 'and' |
+		if jp.isAdviceBefore_After() then
+			'or'
+		else
+			operator
+		endif
+	);

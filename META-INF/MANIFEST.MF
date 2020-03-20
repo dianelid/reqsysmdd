@@ -1,0 +1,30 @@
+Manifest-Version: 1.0
+Bundle-ManifestVersion: 2
+Bundle-Name: ReqSys MDD
+Bundle-SymbolicName: ReqSysMDD;singleton:=true
+Bundle-Version: 1.0.0.qualifier
+Bundle-Activator: org.xtext.plaovgraph.ui.internal.PLAOVgraphActivator
+Bundle-Vendor: Eclipse Modeling Project
+Require-Bundle: org.eclipse.core.runtime,
+ org.eclipse.m2m.atl.engine.emfvm,
+ org.eclipse.ui;bundle-version="3.6.1",
+ org.eclipse.xtext,
+ org.eclipse.xtext.ui;bundle-version="1.0.2",
+ org.apache.log4j;bundle-version="1.2.15",
+ org.eclipse.xtext.ui.shared;bundle-version="1.0.2",
+ org.eclipse.xtext.builder;bundle-version="1.0.2"
+Bundle-RequiredExecutionEnvironment: J2SE-1.5
+Bundle-ActivationPolicy: lazy
+Eclipse-LazyStart: true
+Import-Package: com.google.inject,
+ com.google.inject.name,
+ org.eclipse.acceleo.engine.event,
+ org.eclipse.acceleo.engine.generation.strategy,
+ org.eclipse.acceleo.engine.service,
+ org.eclipse.core.resources,
+ org.eclipse.m2m.atl.core.ui.vm.asm,
+ org.eclipse.m2m.atl.engine.parser,
+ org.eclipse.xtext,
+ org.eclipse.xtext.resource,
+ org.eclipse.xtext.scoping.impl,
+ org.eclipse.xtext.service

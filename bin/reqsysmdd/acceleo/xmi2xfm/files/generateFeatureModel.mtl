@@ -1,0 +1,86 @@
+[comment encoding = Cp1252 /]
+[module generateFeatureModel('http://featuremodel/1.0')/]
+
+[template public generate(aFeatureModel : FeatureModel)]
+[comment @main /]
+[file ('/FeatureModel.xfm', false)]
+<?xml version="1.0" encoding="UTF-8"?>
+<fm:FeatureModel fm:value="FeatureModel"
+xmlns:fm="http://www.pnp-software.com/XFeature/fmm"
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+xsi:schemaLocation="http://www.pnp-software.com/XFeature/fmm
+[for (r : RootFeature | containsRoot)]
+	<fm:RootFeature fm:value="[r.name/]">
+	[r.getFeatures()/]</fm:RootFeature>
+[/for]
+</fm:FeatureModel>[/file]
+[/template]
+
+[template public getFeatures(r : RootFeature)]
+[for (f : Feature | r.containsFeature)]
+[if (f.oclIsTypeOf(Feature))]
+	<fm:SolitaryFeature fm:value="[f.name/]">
+	[f.getAnnotations()/][f.getRelation()/][f.getFeatures()/]</fm:SolitaryFeature>
+[elseif (f.oclIsTypeOf(ReferenceFeature))]
+	<fm:SolitaryReference fm:value="[f.name/]">
+	[f.getAnnotations()/][f.getRelation()/]</fm:SolitaryReference>
+[/if]
+[/for]
+[/template]
+
+[template public getRelation(eFeature : Feature)]
+[for (relation : Relationship | eFeature.containsRelation)]
+[if (relation.oclIsTypeOf(Mandatory))]
+	[if (relation.eGet('cardinalityMin').toString()<>'') and relation.eGet('cardinalityMax').toString()<>'']
+<fm:Cardinality fm:cardMax="[relation.eGet('cardinalityMax')/]" fm:cardMin="[relation.eGet('cardinalityMin')/]"/>
+	[else]
+<fm:Cardinality fm:cardMax="1" fm:cardMin="1"/>
+	[/if]
+[/if]
+[if (relation.oclIsTypeOf(Optional))]
+	[if (relation.eGet('cardinalityMin').toString()<>'') and relation.eGet('cardinalityMax').toString()<>'']
+<fm:Cardinality fm:cardMax="[relation.eGet('cardinalityMax')/]" fm:cardMin="[relation.eGet('cardinalityMin')/]"/>
+	[else]
+<fm:Cardinality fm:cardMax="1" fm:cardMin="0"/>
+	[/if]
+[/if]
+[if (relation.oclIsTypeOf(GroupCardinality))]
+	<fm:FeatureGroup fm:value="FeatureGroup">
+	<fm:Cardinality fm:cardMax="[relation.eGet('cardinalityMax')/]" fm:cardMin="[relation.eGet('cardinalityMin')/]"/>
+	[eFeature.getGroups()/]</fm:FeatureGroup>			
+[/if]
+[eFeature.isAlternativeInclusiveOr()/][/for]
+[/template]
+
+[template public getGroups(eFeature : Feature)]
+[for (f : Feature | eFeature.containsFeature)]
+[if (f.oclIsTypeOf(GroupedFeature))]
+	<fm:GroupedFeature fm:value="[f.name/]">
+	[f.getAnnotations()/][f.getFeatures()/][f.getRelation()/]</fm:GroupedFeature>
+[elseif (f.oclIsTypeOf(GroupedReference))]
+	<fm:GroupedReference fm:value="[f.name/]">
+	[f.getAnnotations()/]</fm:GroupedReference>
+[/if]
+[/for]
+[/template]
+
+[template public isAlternativeInclusiveOr(eFeature : Feature)]
+[if (eFeature.containsFeature.containsRelation->select(relation: Relationship | relation.oclIsTypeOf(Alternative))->size()>0)]
+	<fm:FeatureGroup fm:value="FeatureGroup">
+	<fm:Cardinality fm:cardMax="1" fm:cardMin="1"/>
+	[eFeature.getGroups()/]</fm:FeatureGroup>			
+[/if]
+[if (eFeature.containsFeature.containsRelation->select(relation: Relationship | relation.oclIsTypeOf(Inclusive_Or))->size()>0)]
+	<fm:FeatureGroup fm:value="FeatureGroup">
+	<fm:Cardinality fm:cardMax="n" fm:cardMin="1"/>
+	[eFeature.getGroups()/]</fm:FeatureGroup>
+[/if]
+[/template]
+
+[template public getAnnotations(eFeature : Feature)]
+[for (a : Annotation | eFeature.annotation)]
+<fm:Annotation fm:value="Annotation">
+	<fm:Description fm:value="[a.description/]"/>
+</fm:Annotation>
+[/for]
+[/template]
